@@ -157,42 +157,120 @@ m.Obj = Objective(
 solver = SolverFactory("highs")
 solver.solve(m)
 
+# # =====================================================
+# 4. BEAUTIFUL RESULTS (tables + KPIs)
 # =====================================================
-# 4. BEAUTIFUL RESULTS
-# =====================================================
 
-print("\n" + "="*60)
-print(" OPTIMIZATION RESULTS – IKEA CIRCULAR SUPPLY CHAIN ")
-print("="*60)
+def v(var):
+    return float(value(var))
 
-print(f"\n💰 Total Profit: {value(m.Obj):,.2f}")
+# --- Totals
+profit = v(m.Obj)
 
-total_prod = sum(value(m.x[p,t]) for p in P for t in T)
-total_ref = sum(value(m.yref[p,q,t]) for p in P for q in Q for t in T)
-total_rec = sum(value(m.yrec[p,q,t]) for p in P for q in Q for t in T)
-total_disp = sum(value(m.ydisp[p,q,t]) for p in P for q in Q for t in T)
+total_prod = sum(v(m.x[p,t]) for p in P for t in T)
+total_ref  = sum(v(m.yref[p,q,t]) for p in P for q in Q for t in T)
+total_rec  = sum(v(m.yrec[p,q,t]) for p in P for q in Q for t in T)
+total_disp = sum(v(m.ydisp[p,q,t]) for p in P for q in Q for t in T)
 
-print("\n📦 Global volumes:")
-print(f"  • New production      : {total_prod:,.1f}")
-print(f"  • Refurbished units   : {total_ref:,.1f}")
-print(f"  • Recycled units      : {total_rec:,.1f}")
-print(f"  • Disposed units      : {total_disp:,.1f}")
+total_returns = sum(r_value(p,t) for p in P for t in T)
 
-co2_used = sum(
-    e_prod[p]*value(m.x[p,t]) +
-    sum(
-        e_ref[p,q]*value(m.yref[p,q,t]) +
-        e_rec[p,q]*value(m.yrec[p,q,t]) +
-        e_disp[p,q]*value(m.ydisp[p,q,t])
-        for q in Q
+co2_used = (
+    sum(e_prod[p]*v(m.x[p,t]) for p in P for t in T)
+    + sum(
+        e_ref[p,q]*v(m.yref[p,q,t]) + e_rec[p,q]*v(m.yrec[p,q,t]) + e_disp[p,q]*v(m.ydisp[p,q,t])
+        for p in P for q in Q for t in T
     )
-    for p in P for t in T
 )
 
-print("\n🌱 CO₂:")
-print(f"  • CO₂ used   : {co2_used:,.1f}")
-print(f"  • CO₂ budget : {CO2Budget:,.1f}")
-print(f"  • Slack      : {CO2Budget - co2_used:,.1f}")
+recovery_rate = (total_ref + total_rec) / total_returns if total_returns > 0 else 0.0
+recycling_rate = total_rec / total_returns if total_returns > 0 else 0.0
+disposal_rate = total_disp / total_returns if total_returns > 0 else 0.0
 
-print("\n✅ Model solved successfully.")
-print("="*60)
+# --- Header
+print("\n" + "="*72)
+print(" IKEA CIRCULAR OPTIMIZATION — RESULTS DASHBOARD")
+print("="*72)
+
+print(f"\n💰 PROFIT")
+print(f"  Total profit: {profit:,.2f}")
+
+print(f"\n🌱 CO₂ CONSTRAINT")
+print(f"  CO₂ used   : {co2_used:,.2f}")
+print(f"  CO₂ budget : {CO2Budget:,.2f}")
+print(f"  Slack      : {(CO2Budget - co2_used):,.2f}  (binding if ~0)")
+
+print(f"\n♻️  CIRCULARITY KPIs (over all periods)")
+print(f"  Total returns processed : {total_returns:,.1f}")
+print(f"  Refurbished units       : {total_ref:,.1f}")
+print(f"  Recycled units          : {total_rec:,.1f}")
+print(f"  Disposed units          : {total_disp:,.1f}")
+print(f"  Recovery rate (ref+rec) : {100*recovery_rate:,.2f}%")
+print(f"  Recycling rate          : {100*recycling_rate:,.2f}%")
+print(f"  Disposal rate           : {100*disposal_rate:,.2f}%")
+
+# =====================================================
+# Table 1: monthly aggregates
+# =====================================================
+rows = []
+for t in T:
+    prod_t = sum(v(m.x[p,t]) for p in P)
+    ref_t  = sum(v(m.yref[p,q,t]) for p in P for q in Q)
+    rec_t  = sum(v(m.yrec[p,q,t]) for p in P for q in Q)
+    disp_t = sum(v(m.ydisp[p,q,t]) for p in P for q in Q)
+    salesN_t = sum(v(m.uN[p,t]) for p in P)
+    salesR_t = sum(v(m.uR[p,t]) for p in P)
+    invN_t = sum(v(m.sN[p,t]) for p in P)
+    invR_t = sum(v(m.sR[p,t]) for p in P)
+    ret_t  = sum(r_value(p,t) for p in P)
+
+    rows.append({
+        "t": t,
+        "Production": prod_t,
+        "Returns": ret_t,
+        "Refurbished": ref_t,
+        "Recycled": rec_t,
+        "Disposed": disp_t,
+        "Sales_New": salesN_t,
+        "Sales_Ref": salesR_t,
+        "Inv_New_end": invN_t,
+        "Inv_Ref_end": invR_t,
+    })
+
+df_t = pd.DataFrame(rows)
+print("\n" + "-"*72)
+print("Monthly summary (aggregated over products)")
+print("-"*72)
+print(df_t.round(2).to_string(index=False))
+
+# =====================================================
+# Table 2: product totals
+# =====================================================
+rows = []
+for p in P:
+    prod_p = sum(v(m.x[p,t]) for t in T)
+    salesN_p = sum(v(m.uN[p,t]) for t in T)
+    salesR_p = sum(v(m.uR[p,t]) for t in T)
+    ref_p  = sum(v(m.yref[p,q,t]) for q in Q for t in T)
+    rec_p  = sum(v(m.yrec[p,q,t]) for q in Q for t in T)
+    disp_p = sum(v(m.ydisp[p,q,t]) for q in Q for t in T)
+    ret_p  = sum(r_value(p,t) for t in T)
+
+    rows.append({
+        "Product": p,
+        "Produced": prod_p,
+        "Sold_New": salesN_p,
+        "Sold_Ref": salesR_p,
+        "Returns": ret_p,
+        "Refurbished": ref_p,
+        "Recycled": rec_p,
+        "Disposed": disp_p,
+    })
+
+df_p = pd.DataFrame(rows)
+print("\n" + "-"*72)
+print("Totals by product (over all periods)")
+print("-"*72)
+print(df_p.round(2).to_string(index=False))
+
+print("\n✅ Done.")
+print("="*72)
