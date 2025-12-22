@@ -3,9 +3,7 @@
 import pandas as pd
 from pyomo.environ import *
 
-# =====================================================
-# 1. LOAD DATA FROM EXCEL
-# =====================================================
+
 
 xlsx = "dataset.xlsx"
 
@@ -56,9 +54,7 @@ gamma = policy["gamma"]
 rho = policy["rho"]
 CO2Budget = policy["CO2Budget"]
 
-# =====================================================
-# 2. MODEL
-# =====================================================
+
 
 m = ConcreteModel()
 
@@ -150,16 +146,12 @@ m.Obj = Objective(
     )
 )
 
-# =====================================================
-# 3. SOLVE
-# =====================================================
+
 
 solver = SolverFactory("highs")
 solver.solve(m)
 
-# # =====================================================
-# 4. BEAUTIFUL RESULTS (tables + KPIs)
-# =====================================================
+
 
 def v(var):
     return float(value(var))
@@ -208,9 +200,7 @@ print(f"  Recovery rate (ref+rec) : {100*recovery_rate:,.2f}%")
 print(f"  Recycling rate          : {100*recycling_rate:,.2f}%")
 print(f"  Disposal rate           : {100*disposal_rate:,.2f}%")
 
-# =====================================================
-# Table 1: monthly aggregates
-# =====================================================
+
 rows = []
 for t in T:
     prod_t = sum(v(m.x[p,t]) for p in P)
@@ -242,9 +232,7 @@ print("Monthly summary (aggregated over products)")
 print("-"*72)
 print(df_t.round(2).to_string(index=False))
 
-# =====================================================
-# Table 2: product totals
-# =====================================================
+
 rows = []
 for p in P:
     prod_p = sum(v(m.x[p,t]) for t in T)
